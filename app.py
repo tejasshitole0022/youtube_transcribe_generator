@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify, render_template_string
 import yt_dlp
 import json
+from googletrans import Translator
 
 app = Flask(__name__)
+translator = Translator()
 
 def get_transcript(url):
     ydl_opts = {
@@ -151,7 +153,7 @@ def transcribe():
                         padding: 40px;
                         border-radius: 20px;
                         box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                        max-width: 900px;
+                        max-width: 1200px;
                         margin: 0 auto;
                     }
                     h1 {
@@ -173,7 +175,34 @@ def transcribe():
                     .back-btn:hover {
                         transform: translateY(-2px);
                     }
-                    .transcript {
+                    .lang-toggle {
+                        display: flex;
+                        gap: 10px;
+                        margin-bottom: 20px;
+                    }
+                    .lang-btn {
+                        padding: 10px 20px;
+                        border: 2px solid #667eea;
+                        background: white;
+                        color: #667eea;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.3s;
+                    }
+                    .lang-btn.active {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                    }
+                    .lang-btn:hover {
+                        transform: translateY(-2px);
+                    }
+                    .transcript-container {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 20px;
+                    }
+                    .transcript-box {
                         background: #f8f9fa;
                         padding: 30px;
                         border-radius: 12px;
@@ -182,8 +211,24 @@ def transcribe():
                         font-size: 16px;
                         text-align: justify;
                     }
-                    .copy-btn {
+                    .transcript-box h3 {
+                        margin-bottom: 15px;
+                        color: #667eea;
+                    }
+                    .marathi-text {
+                        font-size: 18px;
+                    }
+                    .loading {
+                        text-align: center;
+                        color: #999;
+                        font-style: italic;
+                    }
+                    .actions {
                         margin-top: 20px;
+                        display: flex;
+                        gap: 10px;
+                    }
+                    .copy-btn {
                         padding: 12px 24px;
                         background: #28a745;
                         color: white;
@@ -196,22 +241,93 @@ def transcribe():
                     .copy-btn:hover {
                         background: #218838;
                     }
+                    .translate-btn {
+                        padding: 12px 24px;
+                        background: #ff6b6b;
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: background 0.3s;
+                    }
+                    .translate-btn:hover {
+                        background: #ee5a52;
+                    }
+                    @media (max-width: 768px) {
+                        .transcript-container {
+                            grid-template-columns: 1fr;
+                        }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <h1>📝 Transcript</h1>
                     <a href="/" class="back-btn">← Back</a>
-                    <div class="transcript" id="transcript">{{ text }}</div>
-                    <button class="copy-btn" onclick="copyText()">Copy to Clipboard</button>
+                    
+                    <div class="transcript-container">
+                        <div class="transcript-box">
+                            <h3>🇬🇧 English</h3>
+                            <div id="english">{{ text }}</div>
+                        </div>
+                        <div class="transcript-box">
+                            <h3>🇮🇳 मराठी (Marathi)</h3>
+                            <div id="marathi" class="marathi-text loading">Click "Translate to Marathi" button below</div>
+                        </div>
+                    </div>
+                    
+                    <div class="actions">
+                        <button class="translate-btn" onclick="translateText()">Translate to Marathi</button>
+                        <button class="copy-btn" onclick="copyText('english')">Copy English</button>
+                        <button class="copy-btn" onclick="copyText('marathi')">Copy Marathi</button>
+                    </div>
                 </div>
                 <script>
-                    function copyText() {
-                        const text = document.getElementById('transcript').innerText;
+                    async function translateText() {
+                        const btn = document.querySelector('.translate-btn');
+                        const marathiDiv = document.getElementById('marathi');
+                        const englishText = document.getElementById('english').innerText;
+                        
+                        btn.disabled = true;
+                        btn.textContent = 'Translating...';
+                        marathiDiv.innerHTML = '<div class="loading">Translating...</div>';
+                        
+                        try {
+                            const response = await fetch('/translate', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({text: englishText})
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error('Translation failed');
+                            }
+                            
+                            const data = await response.json();
+                            
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            marathiDiv.innerHTML = data.translation || 'Translation not available';
+                            marathiDiv.classList.remove('loading');
+                            btn.textContent = '✓ Translated';
+                        } catch (error) {
+                            console.error('Translation error:', error);
+                            marathiDiv.innerHTML = '<div class="loading">Translation failed: ' + error.message + '</div>';
+                            btn.disabled = false;
+                            btn.textContent = 'Translate to Marathi';
+                        }
+                    }
+                    
+                    function copyText(lang) {
+                        const text = document.getElementById(lang).innerText;
                         navigator.clipboard.writeText(text).then(() => {
-                            const btn = document.querySelector('.copy-btn');
+                            const btn = event.target;
+                            const original = btn.textContent;
                             btn.textContent = '✓ Copied!';
-                            setTimeout(() => btn.textContent = 'Copy to Clipboard', 2000);
+                            setTimeout(() => btn.textContent = original, 2000);
                         });
                     }
                 </script>
@@ -275,6 +391,33 @@ def transcribe():
             </body>
             </html>
         ''', error=str(e)), 500
+
+@app.route('/translate', methods=['POST'])
+def translate():
+    data = request.get_json()
+    text = data.get('text', '')
+    
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    
+    try:
+        # Split into chunks if text is too long
+        max_length = 5000
+        if len(text) > max_length:
+            chunks = [text[i:i+max_length] for i in range(0, len(text), max_length)]
+            translated_chunks = []
+            for chunk in chunks:
+                result = translator.translate(chunk, src='en', dest='mr')
+                translated_chunks.append(result.text)
+            translation = ' '.join(translated_chunks)
+        else:
+            result = translator.translate(text, src='en', dest='mr')
+            translation = result.text
+        
+        return jsonify({'translation': translation})
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return jsonify({'error': f'Translation failed: {str(e)}'}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
 def api_transcribe():
