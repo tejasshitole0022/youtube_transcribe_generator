@@ -56,7 +56,7 @@ def index():
         <!DOCTYPE html>
         <html>
         <head>
-            <title>YouTube Transcription</title>
+            <title>YouTube Transcription1</title>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body {
