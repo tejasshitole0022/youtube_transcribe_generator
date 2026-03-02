@@ -1,10 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string
 import yt_dlp
 import json
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
-translator = Translator()
 
 def get_transcript(url):
     ydl_opts = {
@@ -175,28 +174,6 @@ def transcribe():
                     .back-btn:hover {
                         transform: translateY(-2px);
                     }
-                    .lang-toggle {
-                        display: flex;
-                        gap: 10px;
-                        margin-bottom: 20px;
-                    }
-                    .lang-btn {
-                        padding: 10px 20px;
-                        border: 2px solid #667eea;
-                        background: white;
-                        color: #667eea;
-                        border-radius: 8px;
-                        cursor: pointer;
-                        font-weight: 600;
-                        transition: all 0.3s;
-                    }
-                    .lang-btn.active {
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                    }
-                    .lang-btn:hover {
-                        transform: translateY(-2px);
-                    }
                     .transcript-container {
                         display: grid;
                         grid-template-columns: 1fr 1fr;
@@ -209,11 +186,23 @@ def transcribe():
                         line-height: 1.8;
                         color: #333;
                         font-size: 16px;
-                        text-align: justify;
                     }
                     .transcript-box h3 {
                         margin-bottom: 15px;
                         color: #667eea;
+                    }
+                    .sentence {
+                        cursor: pointer;
+                        padding: 4px 0;
+                        transition: all 0.2s;
+                        border-radius: 4px;
+                    }
+                    .sentence:hover {
+                        background: #e3f2fd;
+                    }
+                    .sentence.highlight {
+                        background: #bbdefb;
+                        font-weight: 500;
                     }
                     .marathi-text {
                         font-size: 18px;
@@ -310,8 +299,29 @@ def transcribe():
                                 throw new Error(data.error);
                             }
                             
-                            marathiDiv.innerHTML = data.translation || 'Translation not available';
+                            const englishDiv = document.getElementById('english');
+                            englishDiv.innerHTML = '';
+                            marathiDiv.innerHTML = '';
                             marathiDiv.classList.remove('loading');
+                            
+                            data.english_sentences.forEach((sent, i) => {
+                                const engSpan = document.createElement('span');
+                                engSpan.className = 'sentence';
+                                engSpan.textContent = sent + ' ';
+                                engSpan.dataset.index = i;
+                                engSpan.onmouseenter = () => highlightPair(i);
+                                engSpan.onmouseleave = () => clearHighlight();
+                                englishDiv.appendChild(engSpan);
+                                
+                                const marSpan = document.createElement('span');
+                                marSpan.className = 'sentence';
+                                marSpan.textContent = data.marathi_sentences[i] + ' ';
+                                marSpan.dataset.index = i;
+                                marSpan.onmouseenter = () => highlightPair(i);
+                                marSpan.onmouseleave = () => clearHighlight();
+                                marathiDiv.appendChild(marSpan);
+                            });
+                            
                             btn.textContent = '✓ Translated';
                         } catch (error) {
                             console.error('Translation error:', error);
@@ -319,6 +329,20 @@ def transcribe():
                             btn.disabled = false;
                             btn.textContent = 'Translate to Marathi';
                         }
+                    }
+                    
+                    function highlightPair(index) {
+                        document.querySelectorAll('.sentence').forEach(el => {
+                            if (el.dataset.index == index) {
+                                el.classList.add('highlight');
+                            }
+                        });
+                    }
+                    
+                    function clearHighlight() {
+                        document.querySelectorAll('.sentence').forEach(el => {
+                            el.classList.remove('highlight');
+                        });
                     }
                     
                     function copyText(lang) {
@@ -401,22 +425,21 @@ def translate():
         return jsonify({'error': 'No text provided'}), 400
     
     try:
-        # Split into chunks if text is too long
-        max_length = 5000
-        if len(text) > max_length:
-            chunks = [text[i:i+max_length] for i in range(0, len(text), max_length)]
-            translated_chunks = []
-            for chunk in chunks:
-                result = translator.translate(chunk, src='en', dest='mr')
-                translated_chunks.append(result.text)
-            translation = ' '.join(translated_chunks)
-        else:
-            result = translator.translate(text, src='en', dest='mr')
-            translation = result.text
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
         
-        return jsonify({'translation': translation})
+        translator = GoogleTranslator(source='en', target='mr')
+        translated_sentences = [translator.translate(s) for s in sentences]
+        
+        return jsonify({
+            'english_sentences': sentences,
+            'marathi_sentences': translated_sentences
+        })
     except Exception as e:
         print(f"Translation error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Translation failed: {str(e)}'}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
