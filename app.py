@@ -186,10 +186,12 @@ def transcribe():
                         line-height: 1.8;
                         color: #333;
                         font-size: 16px;
+                        text-align: justify;
                     }
                     .transcript-box h3 {
                         margin-bottom: 15px;
                         color: #667eea;
+                        text-align: left;
                     }
                     .sentence {
                         cursor: pointer;
@@ -205,7 +207,10 @@ def transcribe():
                         font-weight: 500;
                     }
                     .marathi-text {
-                        font-size: 18px;
+                        font-size: 16px;
+                    }
+                    .summary-section {
+                        margin-top: 20px;
                     }
                     .loading {
                         text-align: center;
@@ -266,10 +271,19 @@ def transcribe():
                         </div>
                     </div>
                     
+                    <div class="summary-section">
+                        <div class="transcript-box">
+                            <h3>📋 Summary</h3>
+                            <div id="summary" class="loading">Click "Generate Summary" button below</div>
+                        </div>
+                    </div>
+                    
                     <div class="actions">
                         <button class="translate-btn" onclick="translateText()">Translate to Marathi</button>
+                        <button class="translate-btn" onclick="summarizeText()">Generate Summary</button>
                         <button class="copy-btn" onclick="copyText('english')">Copy English</button>
                         <button class="copy-btn" onclick="copyText('marathi')">Copy Marathi</button>
+                        <button class="copy-btn" onclick="copyText('summary')">Copy Summary</button>
                     </div>
                 </div>
                 <script>
@@ -331,6 +345,43 @@ def transcribe():
                         }
                     }
                     
+                    async function summarizeText() {
+                        const btn = event.target;
+                        const summaryDiv = document.getElementById('summary');
+                        const englishText = document.getElementById('english').innerText;
+                        
+                        btn.disabled = true;
+                        btn.textContent = 'Summarizing...';
+                        summaryDiv.innerHTML = '<div class="loading">Generating summary...</div>';
+                        
+                        try {
+                            const response = await fetch('/summarize', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({text: englishText})
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error('Summarization failed');
+                            }
+                            
+                            const data = await response.json();
+                            
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            
+                            summaryDiv.innerHTML = data.summary;
+                            summaryDiv.classList.remove('loading');
+                            btn.textContent = '✓ Summary Generated';
+                        } catch (error) {
+                            console.error('Summarization error:', error);
+                            summaryDiv.innerHTML = '<div class="loading">Summarization failed: ' + error.message + '</div>';
+                            btn.disabled = false;
+                            btn.textContent = 'Generate Summary';
+                        }
+                    }
+                    
                     function highlightPair(index) {
                         document.querySelectorAll('.sentence').forEach(el => {
                             if (el.dataset.index == index) {
@@ -347,10 +398,16 @@ def transcribe():
                     
                     function copyText(lang) {
                         const text = document.getElementById(lang).innerText;
+                        const btn = window.event.target;
+                        const original = btn.textContent;
+                        
                         navigator.clipboard.writeText(text).then(() => {
-                            const btn = event.target;
-                            const original = btn.textContent;
-                            btn.textContent = '✓ Copied!';
+                            const labels = {
+                                'english': '✓ English Copied!',
+                                'marathi': '✓ Marathi Copied!',
+                                'summary': '✓ Summary Copied!'
+                            };
+                            btn.textContent = labels[lang] || '✓ Copied!';
                             setTimeout(() => btn.textContent = original, 2000);
                         });
                     }
@@ -430,7 +487,16 @@ def translate():
         sentences = [s.strip() for s in sentences if s.strip()]
         
         translator = GoogleTranslator(source='en', target='mr')
-        translated_sentences = [translator.translate(s) for s in sentences]
+        
+        # Batch translate in chunks of 10 sentences
+        chunk_size = 10
+        translated_sentences = []
+        
+        for i in range(0, len(sentences), chunk_size):
+            chunk = sentences[i:i+chunk_size]
+            combined = ' ||| '.join(chunk)
+            translated = translator.translate(combined)
+            translated_sentences.extend(translated.split(' ||| '))
         
         return jsonify({
             'english_sentences': sentences,
@@ -455,6 +521,54 @@ def api_transcribe():
         return jsonify({'transcript': text})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    data = request.get_json()
+    text = data.get('text', '')
+    
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    
+    try:
+        import re
+        from collections import Counter
+        
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if len(sentences) <= 3:
+            return jsonify({'summary': text})
+        
+        # Simple word frequency based summarization
+        words = re.findall(r'\b[a-z]+\b', text.lower())
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'is', 'was', 'are', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they'}
+        words = [w for w in words if w not in stop_words]
+        word_freq = Counter(words)
+        
+        # Score sentences
+        sentence_scores = []
+        for sent in sentences:
+            score = sum(word_freq.get(w.lower(), 0) for w in re.findall(r'\b[a-z]+\b', sent.lower()))
+            sentence_scores.append((score, sent))
+        
+        # Get top 30% of sentences
+        num_summary = max(2, len(sentences) // 5)
+        top_sentences = sorted(sentence_scores, key=lambda x: x[0], reverse=True)[:num_summary]
+        
+        # Maintain original order
+        summary_sentences = []
+        for sent in sentences:
+            if any(sent == s[1] for s in top_sentences):
+                summary_sentences.append(sent)
+        
+        summary = ' '.join(summary_sentences)
+        return jsonify({'summary': summary})
+    except Exception as e:
+        print(f"Summarization error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Summarization failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
