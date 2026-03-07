@@ -212,6 +212,110 @@ def transcribe():
                     .summary-section {
                         margin-top: 20px;
                     }
+                    .chat-button {
+                        position: fixed;
+                        bottom: 30px;
+                        right: 30px;
+                        width: 60px;
+                        height: 60px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border-radius: 50%;
+                        border: none;
+                        cursor: pointer;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                        font-size: 28px;
+                        color: white;
+                        transition: transform 0.3s;
+                        z-index: 1000;
+                    }
+                    .chat-button:hover {
+                        transform: scale(1.1);
+                    }
+                    .chat-window {
+                        position: fixed;
+                        bottom: 100px;
+                        right: 30px;
+                        width: 400px;
+                        height: 500px;
+                        background: white;
+                        border-radius: 15px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+                        display: none;
+                        flex-direction: column;
+                        z-index: 999;
+                    }
+                    .chat-window.open {
+                        display: flex;
+                    }
+                    .chat-header {
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        padding: 15px;
+                        border-radius: 15px 15px 0 0;
+                        font-weight: 600;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    .chat-close {
+                        background: none;
+                        border: none;
+                        color: white;
+                        font-size: 24px;
+                        cursor: pointer;
+                        padding: 0;
+                        width: 30px;
+                        height: 30px;
+                    }
+                    .chat-messages {
+                        flex: 1;
+                        padding: 15px;
+                        overflow-y: auto;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                    }
+                    .chat-message {
+                        padding: 10px 15px;
+                        border-radius: 10px;
+                        max-width: 80%;
+                        word-wrap: break-word;
+                    }
+                    .chat-message.user {
+                        background: #667eea;
+                        color: white;
+                        align-self: flex-end;
+                    }
+                    .chat-message.bot {
+                        background: #f0f0f0;
+                        color: #333;
+                        align-self: flex-start;
+                    }
+                    .chat-input-area {
+                        padding: 15px;
+                        border-top: 1px solid #e0e0e0;
+                        display: flex;
+                        gap: 10px;
+                    }
+                    .chat-input {
+                        flex: 1;
+                        padding: 10px;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 8px;
+                        font-size: 14px;
+                    }
+                    .chat-send {
+                        padding: 10px 20px;
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: 600;
+                    }
+                    .chat-send:hover {
+                        background: #5568d3;
+                    }
                     .loading {
                         text-align: center;
                         color: #999;
@@ -285,8 +389,74 @@ def transcribe():
                         <button class="copy-btn" onclick="copyText('marathi')">Copy Marathi</button>
                         <button class="copy-btn" onclick="copyText('summary')">Copy Summary</button>
                     </div>
+                    
+                    <button class="chat-button" onclick="toggleChat()">💬</button>
+                    
+                    <div class="chat-window" id="chatWindow">
+                        <div class="chat-header">
+                            <span>Chat about this video</span>
+                            <button class="chat-close" onclick="toggleChat()">×</button>
+                        </div>
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="chat-message bot">Hi! Ask me anything about this video transcript.</div>
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" class="chat-input" id="chatInput" placeholder="Ask a question..." onkeypress="if(event.key==='Enter') sendMessage()">
+                            <button class="chat-send" onclick="sendMessage()">Send</button>
+                        </div>
+                    </div>
                 </div>
                 <script>
+                    const transcriptText = {{ text|tojson }};
+                    
+                    function toggleChat() {
+                        document.getElementById('chatWindow').classList.toggle('open');
+                    }
+                    
+                    async function sendMessage() {
+                        const input = document.getElementById('chatInput');
+                        const message = input.value.trim();
+                        
+                        if (!message) return;
+                        
+                        const messagesDiv = document.getElementById('chatMessages');
+                        
+                        // Add user message
+                        const userMsg = document.createElement('div');
+                        userMsg.className = 'chat-message user';
+                        userMsg.textContent = message;
+                        messagesDiv.appendChild(userMsg);
+                        
+                        input.value = '';
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        
+                        // Add loading message
+                        const loadingMsg = document.createElement('div');
+                        loadingMsg.className = 'chat-message bot';
+                        loadingMsg.textContent = 'Thinking...';
+                        messagesDiv.appendChild(loadingMsg);
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        
+                        try {
+                            const response = await fetch('/chat', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    question: message,
+                                    transcript: transcriptText
+                                })
+                            });
+                            
+                            const data = await response.json();
+                            
+                            loadingMsg.textContent = data.answer || 'Sorry, I could not process that.';
+                        } catch (error) {
+                            loadingMsg.textContent = 'Error: Could not get response.';
+                        }
+                        
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    }
+                    
                     async function translateText() {
                         const btn = document.querySelector('.translate-btn');
                         const marathiDiv = document.getElementById('marathi');
@@ -569,6 +739,38 @@ def summarize():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Summarization failed: {str(e)}'}), 500
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    data = request.get_json()
+    question = data.get('question', '')
+    transcript = data.get('transcript', '')
+    
+    if not question or not transcript:
+        return jsonify({'error': 'Question and transcript required'}), 400
+    
+    try:
+        import re
+        
+        # Simple keyword-based Q&A
+        question_lower = question.lower()
+        sentences = re.split(r'(?<=[.!?])\s+', transcript)
+        
+        # Find relevant sentences
+        relevant = []
+        for sent in sentences:
+            if any(word in sent.lower() for word in question_lower.split() if len(word) > 3):
+                relevant.append(sent)
+        
+        if relevant:
+            answer = ' '.join(relevant[:3])  # Return top 3 relevant sentences
+        else:
+            answer = "I couldn't find specific information about that in the transcript. Try asking about topics mentioned in the video."
+        
+        return jsonify({'answer': answer})
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
