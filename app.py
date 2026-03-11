@@ -90,7 +90,9 @@ def index():
                     padding: 15px;
                     border: 2px solid #e0e0e0;
                     border-radius: 10px;
-                    font-size: 16px;
+                    font-size: 18px;
+                        font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
+                        line-height: 2;
                     transition: border 0.3s;
                 }
                 input:focus {
@@ -103,7 +105,9 @@ def index():
                     color: white;
                     border: none;
                     border-radius: 10px;
-                    font-size: 16px;
+                    font-size: 18px;
+                        font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
+                        line-height: 2;
                     font-weight: 600;
                     cursor: pointer;
                     transition: transform 0.2s;
@@ -128,8 +132,31 @@ def index():
         </html>
     ''')
 
-@app.route('/transcribe', methods=['POST'])
+@app.route('/transcribe', methods=['GET', 'POST'])
 def transcribe():
+    if request.method == 'GET':
+        return render_template_string('''
+            <!DOCTYPE html>
+            <html>
+            <head><title>Error</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { font-family: sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+                    .container { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 600px; text-align: center; }
+                    h1 { color: #dc3545; margin-bottom: 20px; }
+                    .back-btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>⚠️ No URL Provided</h1>
+                    <p>Please submit a YouTube URL from the home page.</p>
+                    <a href="/" class="back-btn">← Go to Home</a>
+                </div>
+            </body>
+            </html>
+        ''')
+    
     url = request.form.get('url')
     
     try:
@@ -185,7 +212,9 @@ def transcribe():
                         border-radius: 12px;
                         line-height: 1.8;
                         color: #333;
-                        font-size: 16px;
+                        font-size: 18px;
+                        font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
+                        line-height: 2;
                         text-align: justify;
                     }
                     .transcript-box h3 {
@@ -207,7 +236,9 @@ def transcribe():
                         font-weight: 500;
                     }
                     .marathi-text {
-                        font-size: 16px;
+                        font-size: 18px;
+                        font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
+                        line-height: 2;
                     }
                     .summary-section {
                         margin-top: 20px;
@@ -656,27 +687,43 @@ def translate():
         sentences = re.split(r'(?<=[.!?])\s+', text)
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        translator = GoogleTranslator(source='en', target='mr')
+        # Limit to first 50 sentences for faster translation
+        if len(sentences) > 50:
+            sentences = sentences[:50]
         
-        # Batch translate in chunks of 10 sentences
-        chunk_size = 10
         translated_sentences = []
         
+        # Batch translate in chunks of 5 sentences
+        chunk_size = 5
         for i in range(0, len(sentences), chunk_size):
             chunk = sentences[i:i+chunk_size]
-            combined = ' ||| '.join(chunk)
-            translated = translator.translate(combined)
-            translated_sentences.extend(translated.split(' ||| '))
+            combined = ' '.join(chunk)
+            
+            try:
+                translator = GoogleTranslator(source='en', target='mr')
+                translated_combined = translator.translate(combined[:4999])
+                
+                # Split back into sentences
+                translated_chunk = re.split(r'(?<=[.!?।])\s+', translated_combined)
+                
+                # Ensure we have same number of sentences
+                while len(translated_chunk) < len(chunk):
+                    translated_chunk.append(chunk[len(translated_chunk)])
+                
+                translated_sentences.extend(translated_chunk[:len(chunk)])
+            except Exception as e:
+                print(f"Error translating chunk {i}: {e}")
+                translated_sentences.extend(chunk)
         
         return jsonify({
             'english_sentences': sentences,
             'marathi_sentences': translated_sentences
         })
     except Exception as e:
-        print(f"Translation error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': f'Translation failed: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/transcribe', methods=['POST'])
 def api_transcribe():
