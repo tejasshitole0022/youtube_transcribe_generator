@@ -90,7 +90,7 @@ def index():
                     padding: 15px;
                     border: 2px solid #e0e0e0;
                     border-radius: 10px;
-                    font-size: 18px;
+                    font-size: 20px;
                         font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
                         line-height: 2;
                     transition: border 0.3s;
@@ -105,7 +105,7 @@ def index():
                     color: white;
                     border: none;
                     border-radius: 10px;
-                    font-size: 18px;
+                    font-size: 19px;
                         font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
                         line-height: 2;
                     font-weight: 600;
@@ -212,7 +212,7 @@ def transcribe():
                         border-radius: 12px;
                         line-height: 1.8;
                         color: #333;
-                        font-size: 18px;
+                        font-size: 19px;
                         font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
                         line-height: 2;
                         text-align: justify;
@@ -236,7 +236,7 @@ def transcribe():
                         font-weight: 500;
                     }
                     .marathi-text {
-                        font-size: 18px;
+                        font-size: 19px;
                         font-family: 'Noto Sans Devanagari', 'Mangal', 'Kokila', 'Arial Unicode MS', sans-serif;
                         line-height: 2;
                     }
@@ -519,23 +519,29 @@ def transcribe():
                             marathiDiv.innerHTML = '';
                             marathiDiv.classList.remove('loading');
                             
-                            data.english_sentences.forEach((sent, i) => {
-                                const engSpan = document.createElement('span');
-                                engSpan.className = 'sentence';
-                                engSpan.textContent = sent + ' ';
-                                engSpan.dataset.index = i;
-                                engSpan.onmouseenter = () => highlightPair(i);
-                                engSpan.onmouseleave = () => clearHighlight();
-                                englishDiv.appendChild(engSpan);
+                            const maxLen = Math.max(data.english_sentences.length, data.marathi_sentences.length);
+                            
+                            for (let i = 0; i < maxLen; i++) {
+                                if (i < data.english_sentences.length) {
+                                    const engSpan = document.createElement('span');
+                                    engSpan.className = 'sentence';
+                                    engSpan.textContent = data.english_sentences[i] + ' ';
+                                    engSpan.dataset.index = i;
+                                    engSpan.onmouseenter = () => highlightPair(i);
+                                    engSpan.onmouseleave = () => clearHighlight();
+                                    englishDiv.appendChild(engSpan);
+                                }
                                 
-                                const marSpan = document.createElement('span');
-                                marSpan.className = 'sentence';
-                                marSpan.textContent = data.marathi_sentences[i] + ' ';
-                                marSpan.dataset.index = i;
-                                marSpan.onmouseenter = () => highlightPair(i);
-                                marSpan.onmouseleave = () => clearHighlight();
-                                marathiDiv.appendChild(marSpan);
-                            });
+                                if (i < data.marathi_sentences.length) {
+                                    const marSpan = document.createElement('span');
+                                    marSpan.className = 'sentence';
+                                    marSpan.textContent = data.marathi_sentences[i] + ' ';
+                                    marSpan.dataset.index = i;
+                                    marSpan.onmouseenter = () => highlightPair(i);
+                                    marSpan.onmouseleave = () => clearHighlight();
+                                    marathiDiv.appendChild(marSpan);
+                                }
+                            }
                             
                             btn.textContent = '✓ Translated';
                         } catch (error) {
@@ -687,32 +693,36 @@ def translate():
         sentences = re.split(r'(?<=[.!?])\s+', text)
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        # Limit to first 50 sentences for faster translation
-        if len(sentences) > 50:
-            sentences = sentences[:50]
         
         translated_sentences = []
+        translator = GoogleTranslator(source='en', target='mr')
         
-        # Batch translate in chunks of 5 sentences
-        chunk_size = 5
+        # Translate in larger chunks (10 sentences at a time)
+        chunk_size = 10
         for i in range(0, len(sentences), chunk_size):
             chunk = sentences[i:i+chunk_size]
-            combined = ' '.join(chunk)
+            combined = ' ||| '.join(chunk)  # Use separator
             
             try:
-                translator = GoogleTranslator(source='en', target='mr')
-                translated_combined = translator.translate(combined[:4999])
-                
-                # Split back into sentences
-                translated_chunk = re.split(r'(?<=[.!?।])\s+', translated_combined)
-                
-                # Ensure we have same number of sentences
-                while len(translated_chunk) < len(chunk):
-                    translated_chunk.append(chunk[len(translated_chunk)])
-                
-                translated_sentences.extend(translated_chunk[:len(chunk)])
+                if len(combined) > 4900:
+                    # If too long, translate smaller chunks
+                    for sent in chunk:
+                        translated = translator.translate(sent[:4999])
+                        translated_sentences.append(translated)
+                else:
+                    translated_combined = translator.translate(combined)
+                    translated_chunk = translated_combined.split(' ||| ')
+                    
+                    # Ensure same count
+                    if len(translated_chunk) == len(chunk):
+                        translated_sentences.extend(translated_chunk)
+                    else:
+                        # Fallback: translate individually
+                        for sent in chunk:
+                            translated = translator.translate(sent[:4999])
+                            translated_sentences.append(translated)
             except Exception as e:
-                print(f"Error translating chunk {i}: {e}")
+                print(f"Error: {e}")
                 translated_sentences.extend(chunk)
         
         return jsonify({
